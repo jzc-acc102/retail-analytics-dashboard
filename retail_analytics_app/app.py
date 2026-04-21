@@ -26,31 +26,45 @@ companies = st.sidebar.multiselect(
 filtered_df = df[df['tic'].isin(companies)]
 
 # ==================== 图表1：折线图（下拉菜单选择指标） ====================
-st.header("📈 Financial Trends")
+import plotly.express as px
+
+st.header("Financial Trends")
+
 metric = st.selectbox(
     "Choose a financial metric",
     options=['gross_margin', 'net_margin', 'roa', 'roe', 'inventory_turnover']
 )
 
-fig1, ax1 = plt.subplots(figsize=(10, 6))
-for company in filtered_df['tic'].unique():
-    data = filtered_df[filtered_df['tic'] == company]
-    ax1.plot(data['fyear'], data[metric], 'o-', linewidth=2, label=company)
+# 准备数据
+plot_df = filtered_df[['fyear', 'tic', metric]].copy()
+plot_df = plot_df.rename(columns={metric: 'value'})
 
-# 行业平均线
-industry_avg = df.groupby('fyear')[metric].mean()
-ax1.plot(industry_avg.index, industry_avg.values, 'k--', linewidth=3, label='Industry Average')
-ax1.set_xlabel('Year')
-ax1.set_ylabel(metric.replace('_', ' ').title())
-ax1.legend()
-ax1.grid(True, alpha=0.3)
-st.pyplot(fig1)
+# 计算行业平均
+industry_avg = df.groupby('fyear')[metric].mean().reset_index()
+industry_avg['tic'] = 'Industry Average'
+industry_avg = industry_avg.rename(columns={metric: 'value'})
+
+# 合并
+plot_df = pd.concat([plot_df, industry_avg])
+
+# 用 Plotly 画图
+fig = px.line(
+    plot_df, 
+    x='fyear', 
+    y='value', 
+    color='tic',
+    markers=True,
+    title=f'{metric.replace("_", " ").upper()} Trend (2020-2025)',
+    labels={'fyear': 'Year', 'value': metric.replace("_", " ").title(), 'tic': 'Company'}
+)
+fig.update_layout(hovermode='x unified')
+st.plotly_chart(fig, use_container_width=True)
 
 # ==================== 图表2：四合一子图（毛利率、净利率、ROA、ROE） ====================
-st.header("📊 Four-Key-Metrics Overview (with Industry Average)")
+st.header("Four-Key-Metrics Overview (with Industry Average)")
 fig2, axes = plt.subplots(2, 2, figsize=(14, 10))
 metrics4 = ['gross_margin', 'net_margin', 'roa', 'roe']
-titles4 = ['Gross Margin', 'Net Margin', 'ROA (Return on Assets)', 'ROE (Return on Equity)']
+titles4 = ['Gross Margin', 'Net Margin', 'ROA', 'ROE']
 industry_avg_all = df.groupby('fyear')[metrics4].mean()
 
 for i, (metric, title) in enumerate(zip(metrics4, titles4)):
@@ -68,23 +82,35 @@ plt.tight_layout()
 st.pyplot(fig2)
 
 # ==================== 图表3：ROE vs ROA 柱状图（最新年份） ====================
-st.header("🏆 ROE vs ROA Comparison (Latest Year)")
+import plotly.express as px
+
+st.header("ROE vs ROA Comparison (Latest Year)")
+
 latest_year = df['fyear'].max()
 latest_data = df[df['fyear'] == latest_year].sort_values('roe', ascending=False)
 
-fig3, ax3 = plt.subplots(figsize=(12, 6))
-x = np.arange(len(latest_data))
-width = 0.35
-ax3.bar(x - width/2, latest_data['roe'], width, label='ROE', color='steelblue')
-ax3.bar(x + width/2, latest_data['roa'], width, label='ROA', color='coral')
-ax3.set_xlabel('Company')
-ax3.set_ylabel('Value')
-ax3.set_title(f'ROE vs ROA by Company ({latest_year})', fontsize=14)
-ax3.set_xticks(x)
-ax3.set_xticklabels(latest_data['tic'])
-ax3.legend()
-ax3.grid(True, alpha=0.3, axis='y')
-st.pyplot(fig3)
+# 准备数据
+bar_df = latest_data.melt(
+    id_vars=['tic'], 
+    value_vars=['roe', 'roa'], 
+    var_name='metric', 
+    value_name='value'
+)
+
+# 用 Plotly 画柱状图
+fig = px.bar(
+    bar_df, 
+    x='tic', 
+    y='value', 
+    color='metric',
+    barmode='group',
+    title=f'ROE vs ROA by Company ({latest_year})',
+    labels={'tic': 'Company', 'value': 'Value', 'metric': 'Metric'},
+    text='value'
+)
+fig.update_traces(texttemplate='%{text:.3f}', textposition='outside')
+fig.update_layout(height=500)
+st.plotly_chart(fig, use_container_width=True)
 
 # ==================== 图表4：波动率分析 ====================
 st.header("⚠️ Risk Analysis (ROE Volatility)")
@@ -128,30 +154,36 @@ fig_radar.update_layout(
 st.plotly_chart(fig_radar, use_container_width=True)
 
 # ==================== 图表6：股票收益率对比 ====================
-st.header("📈 Stock Performance (Cumulative Returns)")
+import plotly.express as px
+
+st.header("Stock Performance (Cumulative Returns)")
+
 try:
     stock_raw = pd.read_csv("data/five_retailers_stock_clean.csv")
     stock_raw['date'] = pd.to_datetime(stock_raw['date'])
     stock_raw = stock_raw.sort_values(['ticker', 'date'])
     
+    # 计算累计收益率
     stock_raw['cumulative_return'] = stock_raw.groupby('ticker')['ret'].transform(
         lambda x: (1 + x).cumprod() - 1
     )
+    stock_raw['cumulative_return_pct'] = stock_raw['cumulative_return'] * 100
     
-    fig_stock, ax_stock = plt.subplots(figsize=(12, 6))
-    for company in stock_raw['ticker'].unique():
-        company_data = stock_raw[stock_raw['ticker'] == company]
-        ax_stock.plot(company_data['date'], company_data['cumulative_return'] * 100, 
-                      linewidth=2, label=company)
-    ax_stock.set_xlabel('Date')
-    ax_stock.set_ylabel('Cumulative Return (%)')
-    ax_stock.set_title('Cumulative Stock Returns: 5 Retailers (2020-2025)', fontsize=14)
-    ax_stock.legend()
-    ax_stock.grid(True, alpha=0.3)
-    ax_stock.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
-    st.pyplot(fig_stock)
+    # 用 Plotly 画图
+    fig = px.line(
+        stock_raw,
+        x='date',
+        y='cumulative_return_pct',
+        color='ticker',
+        title='Cumulative Stock Returns: 5 Retailers (2020-2025)',
+        labels={'date': 'Date', 'cumulative_return_pct': 'Cumulative Return (%)', 'ticker': 'Company'}
+    )
+    fig.update_layout(hovermode='x unified', height=500)
+    fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+    st.plotly_chart(fig, use_container_width=True)
+    
 except Exception as e:
-    st.info(f"Stock data not available or error: {e}")
+    st.info(f"Stock data not available: {e}")
 # ==================== 相关系数分析 ====================
 st.header("🔗 Correlation: Profitability vs Stock Returns")
 
