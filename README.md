@@ -110,7 +110,7 @@ pip install -r requirements.txt
 3. Run the app
 streamlit run app.py
 
-The app will open at http://localhost:8501
+The app will open at https://jzc-acc102-retail-analytics-dashboard-app-suevz9.streamlit.app/
 
 📂 Repository Structure
 
